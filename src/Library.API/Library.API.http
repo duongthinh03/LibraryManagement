@@ -1,6 +1,6 @@
 @Library.API_HostAddress = http://localhost:5294
 
-GET {{Library.API_HostAddress}}/weatherforecast/
+GET {{Library.API_HostAddress}}/auth/
 Accept: application/json
 
 ###
