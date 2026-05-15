@@ -1,8 +1,9 @@
-﻿using Library.Application.Common.Requests;
 using Library.Application.Common.Responses;
 using Library.Application.Dtos.Book;
 using Library.Application.Interfaces;
+using Library.Domain.Entities;
 using Library.Domain.Interfaces;
+using Library.Domain.Queries;
 
 namespace Library.Application.Services
 {
@@ -15,22 +16,54 @@ namespace Library.Application.Services
             _bookRepository = bookRepository;
         }
 
-        public async Task<BasePaginationResponse<BookDto>> GetAllAsync( PaginationRequest request)
+        public async Task<BasePaginationResponse<BookListDto>> GetAllAsync(
+            string? search,
+            string? category,
+            string? language,
+            int? fromYear,
+            int? toYear,
+            string? sortBy,
+            string? sortDirection,
+            int pageNo,
+            int pageSize)
         {
-            var (data, totalItems) = await _bookRepository.GetAllAsync(request.PageNo, request.PageSize);
-
-            return new BasePaginationResponse<BookDto>
+            var criteria = new BookQueryCriteria
             {
-                PageNo = request.PageNo,
-                PageSize = request.PageSize,
-                TotalItems = totalItems,
-                TotalPages = (totalItems + request.PageSize - 1) / request.PageSize,
-                Data = data.Select(x => new BookDto
-                {
-                    Id = x.Id,
-                    PageCount = x.PageCount,
-                    Isbn = x.Isbn,
-                }).ToList()
+                Search = search,
+                Category = category,
+                Language = language,
+                FromYear = fromYear,
+                ToYear = toYear,
+                SortBy = sortBy,
+                SortDirection = sortDirection,
+                PageNo = pageNo,
+                PageSize = pageSize
+            };
+
+            var result = await _bookRepository.GetAllAsync(criteria);
+
+            return new BasePaginationResponse<BookListDto>
+            {
+                PageNo = pageNo,
+                PageSize = pageSize,
+                TotalItems = result.TotalItems,
+                TotalPages = (int)Math.Ceiling((double)result.TotalItems / pageSize),
+                Data = result.Data.Select(MapBook).ToList()
+            };
+        }
+
+        private static BookListDto MapBook(BookEntity book)
+        {
+            return new BookListDto
+            {
+                Id = book.Id,
+                PageCount = book.PageCount,
+                Isbn = book.Isbn,
+                Title = book.Document?.Title,
+                Publisher = book.Document?.Publisher,
+                PublishYear = book.Document?.PublishYear,
+                Language = book.Document?.Language,
+                Category = book.Document?.Category?.CategoryName
             };
         }
     }

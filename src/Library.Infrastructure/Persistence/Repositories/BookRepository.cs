@@ -1,32 +1,95 @@
-﻿using Library.Domain.Interfaces;
+using Library.Domain.Common;
+using Library.Domain.Entities;
+using Library.Domain.Interfaces;
+using Library.Domain.Queries;
+using Library.Infrastructure.Common;
 using Microsoft.EntityFrameworkCore;
-using  Library.Domain.Entities;
 
-namespace Library.Infrastructure.Persistence.Repositories;
-
-public class BookRepository : IBookRepository
+namespace Library.Infrastructure.Persistence.Repositories
 {
-    private readonly LibraryDbContext _context;
-
-    public BookRepository(LibraryDbContext context)
+    public class BookRepository : IBookRepository
     {
-        _context = context;
-    }
-
-    public async Task<(List<BookEntity> Data, int TotalItems)> GetAllAsync(int pageNo, int pageSize)
-    {
-        var query = _context.Books.AsQueryable();
-
-        var TotalItems = await query.CountAsync();
-
-        var data = await query.Skip((pageNo-1)* pageSize).Take(pageSize).Select( x => new BookEntity
+        private readonly LibraryDbContext _context;
+        private static readonly Dictionary<string, string> SortMappings = new(StringComparer.OrdinalIgnoreCase)
         {
-            Id = x.Id,
-            DocumentId = x.DocumentId,
-            PageCount = x.PageCount,
-            Isbn = x.Isbn
-        }).ToListAsync();
+            ["id"] = "Id",
+            ["isbn"] = "Isbn",
+            ["title"] = "Document.Title",
+            ["publisher"] = "Document.Publisher",
+            ["publishYear"] = "Document.PublishYear",
+            ["language"] = "Document.Language",
+            ["category"] = "Document.Category.CategoryName",
+            ["pageCount"] = "PageCount"
+        };
 
-        return (data, TotalItems);
+        public BookRepository(LibraryDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<PagedResult<BookEntity>> GetAllAsync(BookQueryCriteria criteria)
+        {
+            var query = _context.Books
+                .AsNoTracking()
+                .Where(x => x.Document != null);
+
+            if (!string.IsNullOrWhiteSpace(criteria.Search))
+            {
+                var keyword = $"%{criteria.Search.Trim()}%";
+
+                query = query.Where(x =>
+                    EF.Functions.Like(x.Isbn!, keyword) ||
+                    EF.Functions.Like(x.Document!.Title!, keyword) ||
+                    EF.Functions.Like(x.Document!.Publisher!, keyword) ||
+                    EF.Functions.Like(x.Document!.Language!, keyword)
+                );
+            }
+
+            var filters = new Dictionary<string, object>();
+
+            query = query.ApplyFilter(filters);
+
+            if (criteria.FromYear.HasValue)
+            {
+                query = query.Where(x => x.Document!.PublishYear >= criteria.FromYear.Value);
+            }
+
+            if (criteria.ToYear.HasValue)
+            {
+                query = query.Where(x => x.Document!.PublishYear <= criteria.ToYear.Value);
+            }
+
+            var result = query
+                .ApplySorting(ResolveSortBy(criteria.SortBy), criteria.SortDirection)
+                .Select(x => new BookEntity
+                {
+                    Id = x.Id,
+                    PageCount = x.PageCount,
+                    Isbn = x.Isbn,
+                    Document = new DocumentEntity
+                    {
+                        Title = x.Document!.Title,
+                        Publisher = x.Document.Publisher,
+                        PublishYear = x.Document.PublishYear,
+                        Language = x.Document.Language,
+                        Category = x.Document.Category == null ? null : new CategoryEntity
+                        {
+                            CategoryName = x.Document.Category.CategoryName
+                        }
+                    }
+                });
+
+            return await result.ToPagedResultAsync(criteria.PageNo, criteria.PageSize);
+        }
+
+        private static string ResolveSortBy(string? sortBy)
+        {
+            if (string.IsNullOrWhiteSpace(sortBy))
+            {
+                return "Id";
+            }
+
+            return SortMappings.TryGetValue(sortBy.Trim(), out var mappedSortBy) ? mappedSortBy : "Id";
+        }
     }
 }
