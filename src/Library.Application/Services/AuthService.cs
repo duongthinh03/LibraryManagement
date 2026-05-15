@@ -1,16 +1,12 @@
-﻿using Library.Application.Dtos.Login.Request;
+using Library.Application.Dtos.Login.Request;
 using Library.Application.Dtos.Login.Response;
 using Library.Application.Interfaces;
 using Library.Domain.Entities;
 using Library.Domain.Enums;
 using Library.Domain.Interfaces;
 using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
 using System.Data;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Security.Cryptography;
 
 namespace Library.Application.Services
 {
@@ -23,8 +19,13 @@ namespace Library.Application.Services
         private readonly IEmailService _emailService;
         private readonly IConfiguration _config;
 
-        public AuthService(IUserRepository userRepository, IJwtService jwtService, IPasswordHasher passwordHasher, 
-                           IReaderRepository readerRepository, IEmailService emailService, IConfiguration configuration)
+        public AuthService(
+            IUserRepository userRepository,
+            IJwtService jwtService,
+            IPasswordHasher passwordHasher,
+            IReaderRepository readerRepository,
+            IEmailService emailService,
+            IConfiguration configuration)
         {
             _userRepository = userRepository;
             _jwtService = jwtService;
@@ -43,10 +44,9 @@ namespace Library.Application.Services
                 throw new Exception("Invalid username or password");
             }
 
-            // CHẶN LOGIN nếu chưa verify
             if (user.Status != AccountStatus.Active)
             {
-                throw new Exception("Tài khoản chưa được xác thực. Vui lòng kiểm tra email.");
+                throw new Exception("Account is not verified. Please check your email.");
             }
 
             var token = _jwtService.GenerateToken(user);
@@ -62,7 +62,6 @@ namespace Library.Application.Services
 
         public async Task RegisterAsync(RegisterRequest request)
         {
-            //1. VALIDATE
             if (string.IsNullOrWhiteSpace(request.Username))
                 throw new Exception("Username is required");
 
@@ -77,15 +76,12 @@ namespace Library.Application.Services
 
             var username = request.Username.Trim().ToLower();
 
-            // 2. CHECK USER 
             var existed = await _userRepository.GetByUsernameAsync(username);
             if (existed != null)
                 throw new Exception("Username already exists");
 
-            // 3. HASH PASSWORD
             var hash = _passwordHasher.Hash(request.Password);
 
-            // 4. CHECK / CREATE READER 
             var reader = await _readerRepository.GetByEmailAsync(request.Email);
 
             if (reader == null)
@@ -99,13 +95,11 @@ namespace Library.Application.Services
                     IsActive = true
                 };
 
-                reader = await _readerRepository.CreateAsync(reader); 
+                reader = await _readerRepository.CreateAsync(reader);
             }
 
-            // 5. CREATE VERIFY TOKEN 
             var verifyToken = Guid.NewGuid().ToString();
 
-            // 6. CREATE USER 
             var user = new UserAccountEntity
             {
                 Username = username,
@@ -120,26 +114,23 @@ namespace Library.Application.Services
 
             await _userRepository.CreateAsync(user);
 
-            // 7. SEND EMAIL 
-
             var baseUrl = _config["App:BaseUrl"];
-
             var link = $"{baseUrl}/verify?token={verifyToken}";
 
             var body = $@"
-            Xin chào {request.FullName},
+            Hello {request.FullName},
 
-            Bạn đã đăng ký tài khoản thành công.
+            Your account registration was successful.
 
-            Vui lòng click vào link bên dưới để xác thực tài khoản:
+            Please click the link below to verify your account:
 
             {link}
 
-            Link sẽ hết hạn sau 1 giờ !!!
+            This link will expire in 1 hour.
 
-            Nếu bạn không thực hiện yêu cầu này, vui lòng bỏ qua email.
+            If you did not make this request, you can ignore this email.
 
-            Trân trọng,
+            Regards,
             Library System
             ";
 
@@ -157,7 +148,7 @@ namespace Library.Application.Services
 
             var user = await _userRepository.GetByVerifyTokenAsync(token);
 
-            if (user == null)
+            if (user == null || user.Status != AccountStatus.Pending)
                 throw new Exception("Invalid token");
 
             if (user.VerifyTokenExpiredAt < DateTime.UtcNow)
@@ -168,6 +159,100 @@ namespace Library.Application.Services
             user.VerifyTokenExpiredAt = null;
 
             await _userRepository.UpdateAsync(user);
+        }
+
+        public async Task ForgotPasswordAsync(ForgotPasswordRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Email))
+                throw new Exception("Email is required");
+
+            var email = request.Email.Trim();
+            var reader = await _readerRepository.GetByEmailAsync(email);
+
+            if (reader == null)
+            {
+                return;
+            }
+
+            var user = await _userRepository.GetByReaderIdAsync(reader.Id);
+
+            if (user == null || user.Status != AccountStatus.Active)
+            {
+                return;
+            }
+
+            user.VerifyToken = await GenerateUniqueResetCodeAsync();
+            user.VerifyTokenExpiredAt = DateTime.UtcNow.AddHours(1);
+
+            await _userRepository.UpdateAsync(user);
+
+            var name = string.IsNullOrWhiteSpace(reader.FullName) ? user.Username : reader.FullName;
+
+            var body = $@"
+            Hello {name},
+
+            We received a request to reset your password.
+
+            Your reset code is:
+
+            {user.VerifyToken}
+
+            This code will expire in 1 hour.
+
+            If you did not request a password reset, you can ignore this email.
+
+            Regards,
+            Library System
+            ";
+
+            await _emailService.SendEmailAsync(
+                email,
+                "Reset your password",
+                body
+            );
+        }
+
+        public async Task ResetPasswordAsync(ResetPasswordRequest request)
+        {
+            if (string.IsNullOrWhiteSpace(request.Code))
+                throw new Exception("Code is required");
+
+            if (string.IsNullOrWhiteSpace(request.NewPassword))
+                throw new Exception("New password is required");
+
+            if (request.NewPassword.Length < 6)
+                throw new Exception("Password must be at least 6 characters");
+
+            if (request.NewPassword != request.ConfirmPassword)
+                throw new Exception("Password does not match");
+
+            var user = await _userRepository.GetByVerifyTokenAsync(request.Code.Trim());
+
+            if (user == null || user.Status != AccountStatus.Active)
+                throw new Exception("Invalid code");
+
+            if (user.VerifyTokenExpiredAt < DateTime.UtcNow)
+                throw new Exception("Code expired");
+
+            user.PasswordHash = _passwordHasher.Hash(request.NewPassword);
+            user.VerifyToken = null;
+            user.VerifyTokenExpiredAt = null;
+
+            await _userRepository.UpdateAsync(user);
+        }
+
+        private async Task<string> GenerateUniqueResetCodeAsync()
+        {
+            while (true)
+            {
+                var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+                var existed = await _userRepository.GetByVerifyTokenAsync(code);
+
+                if (existed == null)
+                {
+                    return code;
+                }
+            }
         }
     }
 }

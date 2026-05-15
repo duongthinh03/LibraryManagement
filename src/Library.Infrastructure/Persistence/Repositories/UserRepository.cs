@@ -37,6 +37,28 @@ namespace Library.Infrastructure.Persistence.Repositories
             };
         }
 
+        public async Task<UserAccountEntity?> GetByReaderIdAsync(int readerId)
+        {
+            var user = await _context.UserAccounts
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.ReaderId == readerId);
+
+            if (user == null) return null;
+
+            return new UserAccountEntity
+            {
+                Id = user.Id,
+                Username = user.Username,
+                PasswordHash = user.PasswordHash,
+                Role = user.Role,
+                ReaderId = user.ReaderId,
+                CreatedAt = user.CreatedAt,
+                Status = Enum.TryParse<AccountStatus>(user.Status, out var status) ? status : AccountStatus.Pending,
+                VerifyToken = user.VerifyToken,
+                VerifyTokenExpiredAt = user.VerifyTokenExpiredAt,
+            };
+        }
+
         public async Task<int> CreateAsync(UserAccountEntity user)
         {
             if (user.ReaderId <= 0)
@@ -86,6 +108,7 @@ namespace Library.Infrastructure.Persistence.Repositories
             if (entity == null)
                 throw new Exception("User not found");
 
+            entity.PasswordHash = user.PasswordHash;
             entity.Status = user.Status.ToString();
             entity.VerifyToken = user.VerifyToken;
             entity.VerifyTokenExpiredAt = user.VerifyTokenExpiredAt;

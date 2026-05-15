@@ -31,6 +31,28 @@ namespace Library.API.Controllers
             return Ok("Register success");
         }
 
+        [HttpPost("forgot-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ForgotPassword(ForgotPasswordRequest request)
+        {
+            try
+            {
+                await _authService.ForgotPasswordAsync(request);
+
+                return Ok(new
+                {
+                    message = "If the email exists, a reset code has been sent."
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
+        }
+
         [HttpGet("verify")]
         [AllowAnonymous]
         public async Task<IActionResult> Verify([FromQuery] string token)
@@ -42,6 +64,28 @@ namespace Library.API.Controllers
                 return Ok(new
                 {
                     message = "Verify thành công"
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new
+                {
+                    message = ex.Message
+                });
+            }
+        }
+
+        [HttpPost("reset-password")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResetPassword(ResetPasswordRequest request)
+        {
+            try
+            {
+                await _authService.ResetPasswordAsync(request);
+
+                return Ok(new
+                {
+                    message = "Reset password success"
                 });
             }
             catch (Exception ex)
