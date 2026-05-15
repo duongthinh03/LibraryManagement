@@ -1,9 +1,4 @@
-﻿using Library.Domain.Enums;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Library.Domain.Enums;
 
 namespace Library.Domain.Entities
 {

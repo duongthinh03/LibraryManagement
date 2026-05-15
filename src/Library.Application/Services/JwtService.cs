@@ -1,4 +1,4 @@
-﻿using Library.Application.Common.Authorization;
+using Library.Application.Common.Authorization;
 using Library.Application.Interfaces;
 using Library.Domain.Entities;
 using Microsoft.Extensions.Configuration;
@@ -24,7 +24,6 @@ namespace Library.Application.Services
 
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            // đổi sang List
             var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.Name, user.Username),
@@ -36,7 +35,6 @@ namespace Library.Application.Services
                     ClaimValueTypes.Integer64)
             };
 
-            // ADD PERMISSION
             var permissions = RolePermissions.GetPermissions(user.Role);
 
             foreach (var permission in permissions)
@@ -47,7 +45,7 @@ namespace Library.Application.Services
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"],
                 audience: _config["Jwt:Audience"],
-                claims: claims, // 👈 dùng claims
+                claims: claims,
                 expires: DateTime.UtcNow.AddMinutes(int.Parse(
                     _config["Jwt:ExpireMinutes"])
                 ),
