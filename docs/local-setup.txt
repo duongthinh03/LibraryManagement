@@ -1,0 +1,8 @@
+//dotnet ef dbcontext scaffold "Server=localhost;Database=LibraryManagement;Trusted_Connection=True;TrustServerCertificate=True" Microsoft.EntityFrameworkCore.SqlServer --output-dir Persistence/Entities --context-dir Persistence --context LibraryDbContext --project src/Library.Infrastructure --startup-project src/Library.API --force --no-onconfiguring
+
+
+dotnet user-secrets set "EmailSettings:Email" "dqthinhdq03@gmail.com" --project src/Library.API
+
+dotnet user-secrets set "EmailSettings:Password" "jnpq ljgq kmag gckv" --project src/Library.API
+
+dotnet user-secrets set "Jwt:Key" "super_secret_key_very_long_1234567890!@#" --project src/Library.API
